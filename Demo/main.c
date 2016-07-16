@@ -1,3 +1,7 @@
+// This file is modified by Wan-Ting CHEN (2016)
+// for the Peer Graded Assignment: Assignment 1
+// of the MOOC on Coursera : Development of Real-Time Systems
+
 /*
 Copyright 2013, Jernej Kovacic
 
@@ -14,15 +18,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
-/**
- * @file
- * A simple demo application.
- *
- * @author Jernej Kovacic
- */
-
-
 #include <stddef.h>
 
 #include <FreeRTOS.h>
@@ -30,107 +25,29 @@ limitations under the License.
 
 #include "app_config.h"
 #include "print.h"
-#include "receive.h"
+
+#define     STRING_LENGTH   32
+
+// The type funcVariable is used to provide the string which should be printed and the delay time
+typedef struct {
+    char str[STRING_LENGTH]; // string sent to UART (shown on screen if using QEMU)
+    unsigned int sleepTime;  // delay time (ms)
+} funcVariable;
+
+// The type taskVariable is used to create the task as well as send the funcVariable to the function called by task.
+
+typedef struct {
+    char name[STRING_LENGTH];   // Task name
+    unsigned int stackSize;     // Stack size (byte)
+    unsigned int priority;      // Priority
+    funcVariable fVar;          // function Variable
+} taskVariable;
 
 
-/*
- * This diagnostic pragma will suppress the -Wmain warning,
- * raised when main() does not return an int
- * (which is perfectly OK in bare metal programming!).
- *
- * More details about the GCC diagnostic pragmas:
- * https://gcc.gnu.org/onlinedocs/gcc/Diagnostic-Pragmas.html
- */
-#pragma GCC diagnostic ignored "-Wmain"
-
-
-/* Struct with settings for each task */
-typedef struct _paramStruct
-{
-    portCHAR* text;                  /* text to be printed by the task */
-    UBaseType_t  delay;              /* delay in milliseconds */
-} paramStruct;
-
-/* Default parameters if no parameter struct is available */
-static const portCHAR defaultText[] = "<NO TEXT>\r\n";
-static const UBaseType_t defaultDelay = 1000;
-
-
-/* Task function - may be instantiated in multiple tasks */
-void vTaskFunction( void *pvParameters )
-{
-    const portCHAR* taskName;
-    UBaseType_t  delay;
-    paramStruct* params = (paramStruct*) pvParameters;
-
-    taskName = ( NULL==params || NULL==params->text ? defaultText : params->text );
-    delay = ( NULL==params ? defaultDelay : params->delay);
-
-    for( ; ; )
-    {
-        /* Print out the name of this task. */
-
-        vPrintMsg(taskName);
-
-        vTaskDelay( delay / portTICK_RATE_MS );
-    }
-
-    /*
-     * If the task implementation ever manages to break out of the
-     * infinite loop above, it must be deleted before reaching the
-     * end of the function!
-     */
-    vTaskDelete(NULL);
-}
-
-
-/* Fixed frequency periodic task function - may be instantiated in multiple tasks */
-void vPeriodicTaskFunction(void* pvParameters)
-{
-    const portCHAR* taskName;
-    UBaseType_t delay;
-    paramStruct* params = (paramStruct*) pvParameters;
-    TickType_t lastWakeTime;
-
-    taskName = ( NULL==params || NULL==params->text ? defaultText : params->text );
-    delay = ( NULL==params ? defaultDelay : params->delay);
-
-    /*
-     * This variable must be initialized once.
-     * Then it will be updated automatically by vTaskDelayUntil().
-     */
-    lastWakeTime = xTaskGetTickCount();
-
-    for( ; ; )
-    {
-        /* Print out the name of this task. */
-
-        vPrintMsg(taskName);
-
-        /*
-         * The task will unblock exactly after 'delay' milliseconds (actually
-         * after the appropriate number of ticks), relative from the moment
-         * it was last unblocked.
-         */
-        vTaskDelayUntil( &lastWakeTime, delay / portTICK_RATE_MS );
-    }
-
-    /*
-     * If the task implementation ever manages to break out of the
-     * infinite loop above, it must be deleted before reaching the
-     * end of the function!
-     */
-    vTaskDelete(NULL);
-}
-
-
-/* Parameters for two tasks */
-static const paramStruct tParam[2] =
-{
-    (paramStruct) { .text="Task1\r\n", .delay=2000 },
-    (paramStruct) { .text="Periodic task\r\n", .delay=3000 }
-};
-
+// to create the task with the pointer of task handle, pointer to array of task Variable, and number of task
+void createTask(xTaskHandle*, taskVariable*, int); 
+// The function used by the tasks created by createTask.
+void printTask(void*);
 
 /*
  * A convenience function that is called when a FreeRTOS API call fails
@@ -148,7 +65,7 @@ static void FreeRTOS_Error(const portCHAR* msg)
 }
 
 /* Startup function that creates and runs two FreeRTOS tasks */
-void main(void)
+int main(void)
 {
     /* Init of print related tasks: */
     if ( pdFAIL == printInit(PRINT_UART_NR) )
@@ -165,40 +82,21 @@ void main(void)
     vDirectPrintMsg("= = = T E S T   S T A R T E D = = =\r\n\r\n");
 
     /* Init of receiver related tasks: */
+    /*
     if ( pdFAIL == recvInit(RECV_UART_NR) )
     {
         FreeRTOS_Error("Initialization of receiver failed\r\n");
-    }
+    }*/
 
-    /* Create a print gate keeper task: */
-    if ( pdPASS != xTaskCreate(printGateKeeperTask, "gk", 128, NULL,
-                               PRIOR_PRINT_GATEKEEPR, NULL) )
-    {
-        FreeRTOS_Error("Could not create a print gate keeper task\r\n");
-    }
 
-    if ( pdPASS != xTaskCreate(recvTask, "recv", 128, NULL, PRIOR_RECEIVER, NULL) )
-    {
-        FreeRTOS_Error("Could not create a receiver task\r\n");
-    }
+    xTaskHandle myTaskHandle;
 
-    /* And finally create two tasks: */
-    if ( pdPASS != xTaskCreate(vTaskFunction, "task1", 128, (void*) &tParam[0],
-                               PRIOR_PERIODIC, NULL) )
-    {
-        FreeRTOS_Error("Could not create task1\r\n");
-    }
+    taskVariable a[] = {{"Task1", 1000, 3, {"This is task 1\n", 100}},
+                        {"Task2", 100, 1, {"This is task 2\n", 500}}};
 
-    if ( pdPASS != xTaskCreate(vPeriodicTaskFunction, "task2", 128, (void*) &tParam[1],
-                               PRIOR_FIX_FREQ_PERIODIC, NULL) )
-    {
-        FreeRTOS_Error("Could not create task2\r\n");
-    }
+    
+    createTask(&myTaskHandle, a, sizeof(a)/sizeof(taskVariable));
 
-    vDirectPrintMsg("A text may be entered using a keyboard.\r\n");
-    vDirectPrintMsg("It will be displayed when 'Enter' is pressed.\r\n\r\n");
-
-    /* Start the FreeRTOS scheduler */
     vTaskStartScheduler();
 
     /*
@@ -210,4 +108,31 @@ void main(void)
 
     /* just in case if an infinite loop is somehow omitted in FreeRTOS_Error */
     for ( ; ; );
+
+    return 0;
 }
+
+void createTask(xTaskHandle* myTaskHandle, taskVariable* task, int N){
+    BaseType_t xReturned;
+    for (int i=0; i<N; ++i) {
+        xReturned = xTaskCreate(printTask,                      // Pointer to the task entry function 
+                                task[i].name,                   // name for the task
+                                task[i].stackSize/sizeof(void*),// StackDepth, sizeof(void*) indicates if it is 2/4/8 byte
+                                (void *) &task[i].fVar,         // variable needed by the created task.
+                                task[i].priority,               // Task's priority
+                                myTaskHandle);                  // Task handle
+
+        if (xReturned == errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY) {  // Print if tasks cannot be created.
+            vDirectPrintMsg("errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY for task\n");
+        }
+    }
+}
+
+void printTask(void* fVar) {
+    funcVariable* var = (funcVariable*) fVar;
+    for( ;; ){
+	    vDirectPrintMsg(var->str);
+        vTaskDelay(var->sleepTime/portTICK_RATE_MS);            // delay 
+    }
+}
+

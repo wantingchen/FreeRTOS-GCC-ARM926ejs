@@ -31,10 +31,11 @@ OBJCOPY = $(TOOLCHAIN)objcopy
 AR = $(TOOLCHAIN)ar
 
 # GCC flags
-CFLAG = -c
+CFLAG = -c -std=gnu11
 OFLAG = -o
 INCLUDEFLAG = -I
 CPUFLAG = -mcpu=arm926ej-s
+#CPUFLAG = -mcpu=arm1176jzf-s 
 WFLAG = -Wall -Wextra -Werror
 CFLAGS = $(CPUFLAG) $(WFLAG)
 
